@@ -6,8 +6,23 @@ const linkCheck = require('link-check');
 const LinkCheckResult = require('link-check').LinkCheckResult;
 const markdownLinkExtractor = require('markdown-link-extractor');
 const ProgressBar = require('progress');
+// const path = require('path')
 
 const envVarPatternMatcher = /(?<pattern>{{env\.(?<name>[a-zA-Z0-9\-_]+)}})/;
+
+function linkCheckAsync(link, opts) {
+    //TODO: remove promise
+    return new Promise((resolve) => {
+        linkCheck(link, opts, function (err, result) {
+            if(err) {
+                result = new LinkCheckResult(opts, link, 500, err);
+                result.status = 'error'; // custom status for errored links
+            }
+
+            resolve(result);
+        });
+    })
+}
 
 /*
  * Performs some special replacements for the following patterns:
@@ -115,18 +130,21 @@ module.exports = function markdownLinkCheck(markdown, opts, callback) {
             }
         }
 
-        linkCheck(link, opts, function (err, result) {
-
+        linkCheckAsync(link, opts).then((result) => {
+            if(result.status === 'alive' /*|| !!path.extname(link)*/) {
+                callback(null, result);
+            } else {
+                // allow markdown files to be without extension. It is required for some wiki systems like Gitlab.
+                // TODO: add option --extensionLess
+                return linkCheckAsync(`${link}.md`, opts).then((resultWithExtension) => {
+                    resultWithExtension.link = result.link;
+                    callback(null, resultWithExtension);
+                });
+            }
+        }).then(() => {
             if (opts.showProgressBar) {
                 bar.tick();
             }
-
-            if (err) {
-                result = new LinkCheckResult(opts, link, 500, err);
-                result.status = 'error'; // custom status for errored links
-            }
-
-            callback(null, result);
-        });
+        })
     }, callback);
 };
